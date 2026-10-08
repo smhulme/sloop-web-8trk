@@ -430,4 +430,67 @@
     if (!audioInitialized) initWebAudio();
   }, { once: true });
 
+
+  // USB Audio Ingest from FM-1 (Felucca) into Web Audio Master
+  let fm1AudioStream = null;
+  let fm1SourceNode = null;
+  let fm1GainNode = null;
+
+  window.enableFM1USBIn = async function() {
+    try {
+      if (!window.Tone) return false;
+      const ctx = Tone.getContext().rawContext;
+      if (ctx.state === "suspended") await ctx.resume();
+
+      // List audio devices to find Felucca / FM-1
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter(d => d.kind === "audioinput");
+      const felucca = audioInputs.find(d => /felucca|fm-1|m-vave/i.test(d.label));
+
+      const constraints = {
+        audio: felucca 
+          ? { deviceId: { exact: felucca.deviceId }, echoCancellation: false, autoGainControl: false, noiseSuppression: false }
+          : { echoCancellation: false, autoGainControl: false, noiseSuppression: false }
+      };
+
+      fm1AudioStream = await navigator.mediaDevices.getUserMedia(constraints);
+      fm1SourceNode = ctx.createMediaStreamSource(fm1AudioStream);
+      fm1GainNode = ctx.createGain();
+      fm1GainNode.gain.value = 1.0;
+
+      fm1SourceNode.connect(fm1GainNode);
+      fm1GainNode.connect(ctx.destination);
+
+      const badge = document.getElementById("fm1audiobadge");
+      if (badge) {
+        badge.textContent = "HW AUDIO IN: ON";
+        badge.style.background = "#287cff";
+        badge.style.color = "#fff";
+      }
+      console.log("FM-1 USB Audio streaming through browser speakers!");
+      return true;
+    } catch (err) {
+      console.warn("Could not capture USB Audio In:", err);
+      alert("Please allow microphone/audio input access in Chrome to route FM-1 audio through your computer speakers.");
+      return false;
+    }
+  };
+
+  window.disableFM1USBIn = function() {
+    if (fm1AudioStream) {
+      fm1AudioStream.getTracks().forEach(t => t.stop());
+      fm1AudioStream = null;
+    }
+    if (fm1SourceNode) {
+      fm1SourceNode.disconnect();
+      fm1SourceNode = null;
+    }
+    const badge = document.getElementById("fm1audiobadge");
+    if (badge) {
+      badge.textContent = "HW AUDIO IN: OFF";
+      badge.style.background = "var(--s3)";
+      badge.style.color = "var(--dim)";
+    }
+  };
+
 })();
